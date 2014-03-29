@@ -1,0 +1,11 @@
+---
+- name: automated verification testing 
+  hosts: routers
+  connection: local
+  gather_facts: no
+
+  tasks:
+  - name: executing ping tests
+    auto_pinger:
+      source_host={{ inventory_hostname }}
+      remote_hosts={{ remote_hosts }}

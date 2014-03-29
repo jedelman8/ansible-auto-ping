@@ -1,0 +1,130 @@
+#!/usr/bin/env python
+
+import imp 
+import sys
+import socket
+import logging
+from datetime import datetime
+from cpal.core.main import device
+
+
+def main():
+	module = AnsibleModule(
+		argument_spec = dict(
+			source_host=dict(required=True),
+			remote_hosts=dict(required=True)
+		),
+		supports_check_mode = False
+	)
+	
+	failed, twentyp, fortyp, sixtyp, eightyp, hundredp, unknown = 0,0,0,0,0,0,0
+
+
+	dest_dir = module.params['remote_hosts']
+	dfile = open(dest_dir+'remote_devices','r')
+
+	source = module.params['source_host']
+	src_ip = socket.gethostbyname(source)
+
+	'''This is the *real* log file that displays logs from this module
+	   but, it also displays logs from the onePK module
+	'''
+	logfile = 'logs/logfilej_' + source
+	logger = logging.getLogger('pinger_test')
+	logging.basicConfig(filename=logfile, filemode='w',level=logging.INFO)
+	logging.getLogger().name = 'ping_test for ' + source
+	
+	'''This is another file (log) that is being called "logfile_simple" since 
+	   it displays a short and concise view of the ping results for
+	   each device.
+	'''
+	logfile_simple = 'logs/logs_simple/log_simple_' + source
+	log_simple = open(logfile_simple, 'w')
+	log_simple.truncate()
+
+	'''using device from CPAL to connect to the device
+	   ensure the onePK VTY Service Set is enabled on the Cisco devices
+	'''
+	ping_device = device('ping_device','cisco',src_ip) 
+
+	dest_list =[]
+	results = {}
+	ping_response = {}
+	summary = {}
+	for each_address in dfile:
+
+		if not each_address.startswith('#'):
+
+			add = each_address.rstrip('\n')  #cleaning up as reading in from file
+			
+			dest_list.append(add)  
+			dest_ip = socket.gethostbyname(add) 
+			#ping_results = ping_device.cli('ping '+ dest_ip).split('\n')[-1].split(',')[0] 
+			ping_results = ping_device.cli('ping '+ dest_ip)
+			ping_results_parsed = ping_results.split('\n')[-1].split(',')[0] 
+			# ****ping_results is parsed to only show "Success rate is 100 percent (4/4)" from a ping response on a Cisco router 
+			ping_response[add] = ping_results_parsed
+
+
+			'''Determining how many devices failed and how many of the 5 pings were received'''
+
+			percent = ping_results_parsed.split(' ')[3]
+			if percent == '100':
+				hundredp+= 1
+			elif percent == '80':
+				eightyp+=1
+			elif percent == '60':
+				sixtyp = sixtyp + 1
+			elif percent == '40':
+				fortyp = fortyp + 1
+			elif percent == '20':
+				twentyp = twentyp + 1
+			elif percent == '0':
+				failed = failed + 1
+			else:
+				unknown = uknown + 1
+			summary = {'0':failed,'20':twentyp,'40':fortyp,'60':sixtyp,'80':eightyp,'100':hundredp,'unknown':unknown}
+
+			'''Some manipulation and writing to log files'''
+			src_for_log = source + '[' + src_ip + ']'
+			dest_for_log = add + '[' + dest_ip + ']'
+			logging.info('-----------------------------------------------------')
+			logging.info('SOURCE: ' + src_for_log + ' DESTINATION: ' + dest_for_log)
+			logging.info(ping_results)
+			logging.info('-----------------------------------------------------')
+
+			'''Manipulation and writing to the "simple" log files'''
+			log_simple.write(datetime.now().strftime('%Y-%m-%d %H:%M:%S')+'\n')
+
+			
+			log_simple.write('     -------------------------------------------------------------------------\n')
+			log_simple.write('     SOURCE: ' + src_for_log + ' DESTINATION: ' + dest_for_log + '\n')
+			log_simple.write('     '+ping_results_parsed + '\n')
+			log_simple.write('     -------------------------------------------------------------------------\n')
+			log_simple.write('     -------------------------------------------------------------------------\n')
+
+	'''Writing summary data to simple log file'''
+
+	log_simple.write('Summary of ping tests: \n')
+	log_simple.write('Devices with: \n')
+	log_simple.write('     Success Rate of 100%: '+str(hundredp)+'\n')
+	log_simple.write('     Success Rate of  80%: '+str(eightyp)+'\n')
+	log_simple.write('     Success Rate of  60%: '+str(sixtyp)+'\n')
+	log_simple.write('     Success Rate of  40%: '+str(fortyp)+'\n')
+	log_simple.write('     Success Rate of  20%: '+str(twentyp)+'\n')
+	log_simple.write('     Success Rate of   0%: '+str(failed)+'\n')
+	
+	ping_device.native.disconnect()
+
+	results['ping_response'] = ping_response
+	results['src_name'] = source
+	results['dest_list'] = dest_list
+	results['src_ip'] = src_ip
+	results['percent_received'] = summary
+	
+	dfile.close()
+
+	module.exit_json(response=results)
+	
+from ansible.module_utils.basic import *
+main()

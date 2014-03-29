@@ -1,0 +1,11 @@
+[all:vars]
+remote_hosts = jfiles/
+
+[routers]
+router1
+router2
+router3
+
+[switches]
+switch1
+
